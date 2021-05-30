@@ -17,17 +17,17 @@
 * along with PYSLAM. If not, see <http://www.gnu.org/licenses/>.
 """
 
-import numpy as np
-import cv2
-import math
-import time 
-
 # https://stackoverflow.com/questions/30669659/multiproccesing-and-error-the-process-has-forked-and-you-cannot-use-this-corefou
 # for removing the following ERROR message and get pangolin working!
-#     The process has forked and you cannot use this CoreFoundation functionality safely. 
+#     The process has forked and you cannot use this CoreFoundation functionality safely.
 #     You MUST exec(). Break on __THE_PROCESS_HAS_FORKED_AND_YOU_CANNOT_USE_THIS_
 #     COREFOUNDATION_FUNCTIONALITY___YOU_MUST_EXEC__() to debug.
-import platform, multiprocessing
+import multiprocessing
+import platform
+import time
+
+import cv2
+
 if __name__ == '__main__':
     if platform.system() == "Darwin":
         multiprocessing.set_start_method('spawn')
@@ -35,27 +35,17 @@ if __name__ == '__main__':
 from config import Config
 
 from slam import Slam, SlamState
-from camera  import PinholeCamera
-from ground_truth import groundtruth_factory
+from camera import PinholeCamera
 from dataset import dataset_factory
 
-#from mplot3d import Mplot3d
-#from mplot2d import Mplot2d
-from mplot_thread import Mplot2d, Mplot3d
+from mplot_thread import Mplot2d
 
 from viewer3D import Viewer3D
 from utils_sys import getchar, Printer 
 
-from feature_tracker import feature_tracker_factory, FeatureTrackerTypes 
-from feature_manager import feature_manager_factory
-from feature_types import FeatureDetectorTypes, FeatureDescriptorTypes, FeatureInfo
-from feature_matcher import feature_matcher_factory, FeatureMatcherTypes
+from feature_tracker import feature_tracker_factory, FeatureTrackerTypes
 
 from feature_tracker_configs import FeatureTrackerConfigs
-
-from parameters import Parameters  
-import multiprocessing as mp 
-
 
 if __name__ == "__main__":
 
