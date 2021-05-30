@@ -18,7 +18,6 @@
 """
 import math
 from collections import Counter
-from enum import Enum
 
 import cv2
 import numpy as np
@@ -27,8 +26,6 @@ from feature_manager_adaptors import BlockAdaptor, PyramidAdaptor
 from feature_types import FeatureDetectorTypes, FeatureDescriptorTypes, FeatureInfo
 from parameters import Parameters
 from pyramid import PyramidType
-from utils_features import unpackSiftOctaveKps, UnpackOctaveMethod, sat_num_features, kdt_nms, ssc_nms, octree_nms, \
-    grid_nms
 from utils_geom import hamming_distance, hamming_distances, l2_distance, l2_distances
 from utils_sys import Printer, import_from
 
@@ -51,16 +48,7 @@ kDrawOriginalExtractedFeatures = False  # for debugging
 
 if not kVerbose:
     def print(*args, **kwargs):
-        pass 
-    
-    
-class KeyPointFilterTypes(Enum):
-    NONE         = 0
-    SAT          = 1      # sat the number of features (keep the best N features: 'best' on the basis of the keypoint.response)
-    KDT_NMS      = 2      # Non-Maxima Suppression based on kd-tree
-    SSC_NMS      = 3      # Non-Maxima Suppression based on https://github.com/BAILOOL/ANMS-Codes
-    OCTREE_NMS   = 4      # Distribute keypoints by using a octree (as a matter of fact, a quadtree): from ORBSLAM2
-    GRID_NMS     = 5      # NMS by using a grid 
+        pass
 
 
 def feature_manager_factory(num_features=kNumFeatureDefault, 
@@ -80,7 +68,7 @@ class FeatureManager(object):
                        detector_type = FeatureDetectorTypes.ORB2,
                        descriptor_type = FeatureDescriptorTypes.ORB2):
         self.detector_type = detector_type 
-        self._feature_detector   = None 
+        self._feature_detector = None
                 
         self.descriptor_type = descriptor_type
         self._feature_descriptor = None 
@@ -112,11 +100,7 @@ class FeatureManager(object):
         
         self.oriented_features = True             # automatically managed below depending on selected features 
         self.do_keypoints_size_rescaling = False  # automatically managed below depending on selected features 
-        self.need_color_image = False             # automatically managed below depending on selected features 
-                
-        self.keypoint_filter_type = KeyPointFilterTypes.SAT            # default keypoint-filter type 
-        self.need_nms = False                                          # need or not non-maximum suppression of keypoints         
-        self.keypoint_nms_filter_type = KeyPointFilterTypes.KDT_NMS    # default keypoint-filter type if NMS is needed 
+        self.need_color_image = False             # automatically managed below depending on selected features
 
         # initialize sigmas for keypoint levels (used for SLAM)
         self.init_sigma_levels()
@@ -158,12 +142,9 @@ class FeatureManager(object):
         if self.detector_type == FeatureDetectorTypes.ORB2:
             orb2_num_levels = self.num_levels                              
             self._feature_detector = Orbslam2Feature2D(self.num_features, self.scale_factor, orb2_num_levels) 
-            self.keypoint_filter_type = KeyPointFilterTypes.NONE  # ORB2 cpp implementation already includes the algorithm OCTREE_NMS
+            self.keypoint_filter_type = None  # ORB2 cpp implementation already includes the algorithm OCTREE_NMS
         else:
             raise ValueError("Unknown feature detector %s" % self.detector_type)
-                
-        if self.need_nms:
-            self.keypoint_filter_type = self.keypoint_nms_filter_type         
         
         if self.use_bock_adaptor: 
               self.orb_params['edgeThreshold'] = 0
@@ -270,12 +251,7 @@ class FeatureManager(object):
         for i in range(num_levels):
             self.inv_scale_factors[i] = 1.0/self.scale_factors[i]
             self.inv_level_sigmas2[i] = 1.0/self.level_sigmas2[i]
-        #print('self.scale_factor: ', self.scale_factor)                      
-        #print('self.scale_factors: ', self.scale_factors)
-        #print('self.level_sigmas: ', self.level_sigmas)                
-        #print('self.inv_scale_factors: ', self.inv_scale_factors)          
-        
-        
+
     # initialize scale factors, sigmas for each octave level; 
     # these are used for managing image pyramids and weighting (information matrix) reprojection error terms in the optimization;
     # this method can be used only when the following mapping is adopted for SIFT:  
@@ -319,38 +295,6 @@ class FeatureManager(object):
         for i in range(num_levels):
             self.inv_scale_factors[i] = 1.0/self.scale_factors[i]
             self.inv_level_sigmas2[i] = 1.0/self.level_sigmas2[i]
-        #print('self.scale_factor: ', self.scale_factor)                      
-        #print('self.scale_factors: ', self.scale_factors)
-        #print('self.level_sigmas: ', self.level_sigmas)                
-        #print('self.inv_scale_factors: ', self.inv_scale_factors)             
-
-
-    # filter matches by using 
-    # Non-Maxima Suppression (NMS) based on kd-trees  
-    # or SSC NMS (https://github.com/BAILOOL/ANMS-Codes)
-    # or SAT (get features with best responses)
-    # or OCTREE_NMS (implemented in ORBSLAM2, distribution of features in a quad-tree)
-    def filter_keypoints(self, type, frame, kps, des=None):
-        filter_name = type.name        
-        if type == KeyPointFilterTypes.NONE:
-            pass  
-        elif type == KeyPointFilterTypes.KDT_NMS:      
-            kps, des = kdt_nms(kps, des, self.num_features)
-        elif type == KeyPointFilterTypes.SSC_NMS:    
-            kps, des = ssc_nms(kps, des, frame.shape[1], frame.shape[0], self.num_features)   
-        elif type == KeyPointFilterTypes.OCTREE_NMS:
-            if des is not None: 
-                raise ValueError('at the present time, you cannot use OCTREE_NMS with descriptors')
-            kps = octree_nms(frame, kps, self.num_features)
-        elif type == KeyPointFilterTypes.GRID_NMS:    
-            kps, des, _ = grid_nms(kps, des, frame.shape[0], frame.shape[1], self.num_features, dist_thresh=4)            
-        elif type == KeyPointFilterTypes.SAT:                                                        
-            if len(kps) > self.num_features:
-                kps, des = sat_num_features(kps, des, self.num_features)      
-        else:             
-            raise ValueError("Unknown match-filter type")     
-        return kps, des, filter_name 
-             
 
     def rescale_keypoint_size(self, kps):
         # if keypoints are FAST, etc. then rescale their small sizes 
@@ -360,11 +304,10 @@ class FeatureManager(object):
         if doit: 
             for kp in kps:
                 kp.size *= scale     
-                             
 
     # detect keypoints without computing their descriptors
     # out: kps (array of cv2.KeyPoint)
-    def detect(self, frame, mask=None, filter=True): 
+    def detect(self, frame, mask=None):
         if not self.need_color_image and frame.ndim>2:                                    # check if we have to convert to gray image 
             frame = cv2.cvtColor(frame,cv2.COLOR_RGB2GRAY)                    
         if self.use_pyramid_adaptor:  
@@ -375,39 +318,29 @@ class FeatureManager(object):
             kps = self.block_adaptor.detect(frame, mask)            
         else:                         
             # standard detection      
-            kps = self._feature_detector.detect(frame, mask)  
-        # filter keypoints    
-        filter_name = 'NONE'   
-        if filter:   
-            kps, _, filter_name  = self.filter_keypoints(self.keypoint_filter_type, frame, kps) 
-        # if keypoints are FAST, etc. give them a decent size in order to properly compute the descriptors       
+            kps = self._feature_detector.detect(frame, mask)
         if self.do_keypoints_size_rescaling:
             self.rescale_keypoint_size(kps)             
         if kDrawOriginalExtractedFeatures: # draw the original features
             imgDraw = cv2.drawKeypoints(frame, kps, None, color=(0,255,0), flags=0)
             cv2.imshow('detected keypoints',imgDraw)            
         if kVerbose:
-            print('detector:',self.detector_type.name,', #features:', len(kps),', [kp-filter:',filter_name,']')    
+            print('detector:', self.detector_type.name,', #features:', len(kps))
         return kps        
-    
-    
+
     # compute the descriptors once given the keypoints 
-    def compute(self, frame, kps, filter = True):
+    def compute(self, frame, kps):
         if not self.need_color_image and frame.ndim>2:     # check if we have to convert to gray image 
             frame = cv2.cvtColor(frame,cv2.COLOR_RGB2GRAY)          
-        kps, des = self._feature_descriptor.compute(frame, kps)  # then, compute descriptors 
-        # filter keypoints     
-        filter_name = 'NONE'                 
-        if filter: 
-            kps, des, filter_name  = self.filter_keypoints(self.keypoint_filter_type, frame, kps, des)            
+        kps, des = self._feature_descriptor.compute(frame, kps)  # then, compute descriptors
         if kVerbose:
-            print('descriptor:',self.descriptor_type.name,', #features:', len(kps),', [kp-filter:',filter_name,']')           
+            print('descriptor:',self.descriptor_type.name,', #features:', len(kps))
         return kps, des 
 
 
     # detect keypoints and their descriptors
     # out: kps, des 
-    def detectAndCompute(self, frame, mask=None, filter = True):
+    def detectAndCompute(self, frame, mask=None):
         if not self.need_color_image and frame.ndim>2:     # check if we have to convert to gray image 
             frame = cv2.cvtColor(frame,cv2.COLOR_RGB2GRAY)  
         if self.use_pyramid_adaptor:  
@@ -417,17 +350,15 @@ class FeatureManager(object):
                 kps, des = self.pyramid_adaptor.detectAndCompute(frame, mask)  
             #
             else: 
-                kps = self.detect(frame, mask, filter=True)        # first, detect by using adaptor on the different pyramid levels                             
-                kps, des = self.compute(frame, kps, filter=False)  # then, separately compute the descriptors on detected keypoints (one time)
-                filter = False # disable keypoint filtering since we already applied it for detection 
+                kps = self.detect(frame, mask)        # first, detect by using adaptor on the different pyramid levels
+                kps, des = self.compute(frame, kps)  # then, separately compute the descriptors on detected keypoints (one time)
         elif self.use_bock_adaptor:   
             # detectAndCompute with block adaptor (force detect/compute on each block)
             #
             #kps, des = self.block_adaptor.detectAndCompute(frame, mask)    
             #
-            kps = self.detect(frame, mask, filter=True)        # first, detect by using adaptor                           
-            kps, des = self.compute(frame, kps, filter=False)  # then, separately compute the descriptors   
-            filter = False  # disable keypoint filtering since we already applied it for detection            
+            kps = self.detect(frame, mask)        # first, detect by using adaptor
+            kps, des = self.compute(frame, kps)  # then, separately compute the descriptors
         else:                         
             # standard detectAndCompute  
             if self.is_detector_equal_to_descriptor:                     
@@ -439,22 +370,14 @@ class FeatureManager(object):
             else:
                 # detector and descriptor are different => call them separately 
                 # 1. first, detect keypoint locations  
-                kps = self.detect(frame, mask, filter=False)                  
+                kps = self.detect(frame, mask)
                 # 2. then, compute descriptors        
                 kps, des = self._feature_descriptor.compute(frame, kps)  
                 if kVerbose:
                     #print('detector: ', self.detector_type.name, ', #features: ', len(kps))           
-                    print('descriptor: ', self.descriptor_type.name, ', #features: ', len(kps))   
-        # filter keypoints   
-        filter_name = 'NONE'
-        if filter:                                                                 
-            kps, des, filter_name  = self.filter_keypoints(self.keypoint_filter_type, frame, kps, des)                                                              
-        if self.detector_type == FeatureDetectorTypes.SIFT or \
-           self.detector_type == FeatureDetectorTypes.ROOT_SIFT or \
-           self.detector_type == FeatureDetectorTypes.CONTEXTDESC :
-            unpackSiftOctaveKps(kps, method=UnpackOctaveMethod.INTRAL_LAYERS)           
+                    print('descriptor: ', self.descriptor_type.name, ', #features: ', len(kps))
         if kVerbose:
-            print('detector:',self.detector_type.name,', descriptor:', self.descriptor_type.name,', #features:', len(kps),' (#ref:', self.num_features, '), [kp-filter:',filter_name,']')                                         
+            print('detector:',self.detector_type.name,', descriptor:', self.descriptor_type.name,', #features:', len(kps),' (#ref:', self.num_features)
         self.debug_print(kps)             
         return kps, des             
  
