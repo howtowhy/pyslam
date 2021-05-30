@@ -53,9 +53,6 @@ if __name__ == "__main__":
 
     dataset = dataset_factory(config.dataset_settings)
 
-    #groundtruth = groundtruth_factory(config.dataset_settings)
-    groundtruth = None # not actually used by Slam() class; could be used for evaluating performances 
-
     cam = PinholeCamera(config.cam_settings['Camera.width'], config.cam_settings['Camera.height'],
                         config.cam_settings['Camera.fx'], config.cam_settings['Camera.fy'],
                         config.cam_settings['Camera.cx'], config.cam_settings['Camera.cy'],
@@ -75,7 +72,7 @@ if __name__ == "__main__":
     feature_tracker = feature_tracker_factory(**tracker_config)
     
     # create SLAM object 
-    slam = Slam(cam, feature_tracker, groundtruth)
+    slam = Slam(cam, feature_tracker)
     time.sleep(1) # to show initial messages 
 
     viewer3D = Viewer3D()
